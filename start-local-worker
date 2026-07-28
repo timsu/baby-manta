@@ -13,4 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANTA_SERVER_URL="${MANTA_SERVER_URL:-ws://localhost:3020}"
 export MANTA_SERVER_URL
 
-exec "$SCRIPT_DIR/start-worker" "$@"
+# --non-interactive: never offer to install the login service. A service started
+# at login would use ./start-worker's own default server URL, not this script's,
+# so installing one from here would quietly produce a worker pointing somewhere
+# else. Run ./start-worker --install-service directly if you do want one.
+# It is passed first so explicit flags still reach start-worker unchanged.
+exec "$SCRIPT_DIR/start-worker" --non-interactive "$@"
