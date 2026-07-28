@@ -1,0 +1,38 @@
+Copyright (c) 2026 Tim Su. All rights reserved.
+
+PRIVATE EVALUATION LICENSE
+
+This software and its accompanying documentation (the "Software") are made
+available solely for private review and evaluation by individuals to whom the
+copyright holder has directly granted access — for example, candidates
+completing a technical interview exercise.
+
+Permission is granted to a person who has been given access by the copyright
+holder to:
+
+  (a) view, download, run, and modify the Software on their own machines; and
+  (b) return modifications privately to the copyright holder,
+
+in each case solely for the purpose of the evaluation for which access was
+granted.
+
+ALL OTHER RIGHTS ARE RESERVED. Without the prior written permission of the
+copyright holder, no person may:
+
+  (a) redistribute, publish, sublicense, sell, or otherwise share the Software
+      or any derivative of it, in source or compiled form;
+  (b) use the Software, in whole or in part, in any product, service, or
+      codebase, whether commercial or non-commercial; or
+  (c) use the Software as training data for, or otherwise incorporate it into,
+      any machine learning model or dataset.
+
+The absence of an open-source license is intentional. Public visibility of this
+repository does not grant any license beyond the limited permission stated
+above.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

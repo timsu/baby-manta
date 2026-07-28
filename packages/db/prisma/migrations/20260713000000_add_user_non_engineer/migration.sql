@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "nonEngineer" BOOLEAN NOT NULL DEFAULT false;

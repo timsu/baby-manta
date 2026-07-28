@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Start a Manta worker against a local development server.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+MANTA_SERVER_URL="${MANTA_SERVER_URL:-ws://localhost:3020}"
+export MANTA_SERVER_URL
+
+exec "$SCRIPT_DIR/start-worker" "$@"

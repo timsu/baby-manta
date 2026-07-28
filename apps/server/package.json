@@ -1,0 +1,34 @@
+{
+  "name": "@manta/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/server.ts",
+  "scripts": {
+    "dev": "node --watch --experimental-transform-types --env-file-if-exists=.env --env-file-if-exists=.env.local src/server.ts",
+    "start": "node --experimental-transform-types --env-file-if-exists=.env src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server.js --packages=external",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@daytona/sdk": "^0.187.0",
+    "@hono/node-server": "^1.13.7",
+    "@hono/node-ws": "^1.3.1",
+    "@manta/agent": "workspace:*",
+    "@manta/db": "workspace:*",
+    "@manta/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "@slack/web-api": "^7.16.0",
+    "@upstash/redis": "^1.38.0",
+    "ably": "^2.22.1",
+    "google-auth-library": "^10.7.0",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "^1.69.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}

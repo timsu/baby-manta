@@ -1,0 +1,640 @@
+#!/usr/bin/env bash
+# Manta worker daemon — run this after `git clone` to start coding workers.
+#
+# 1. git clone <repo> && cd manta
+# 2. ./start-worker   # first run opens a browser to pair this machine to your account
+#    For a local dev server instead, run ./start-local-worker
+#
+# Exit codes from the daemon:
+#   42  — update requested (server or daemon self-check); script force-fetches the remote default branch and restarts
+#   1   — pairing failed/timed out; script exits without retrying
+#   0   — clean exit (Ctrl-C or intentional stop)
+#
+# Config (from .worker.env or environment variables):
+#   MANTA_SERVER_URL  WebSocket URL of the Manta server  (default: wss://manta.example.com)
+#   WORKER_ID         Stable name for this daemon         (default: hostname-pid)
+#
+# Environment: on every start this script adopts whatever your interactive shell
+# exports that a login service would not see (see "Adopt the user's interactive
+# shell environment" below), so vars exported from .zshrc / .bashrc reach agent
+# commands. Entries in .worker.env are applied afterwards and override it.
+#
+# On interactive runs, this script asks whether to install itself as a login
+# service (macOS launchd or Linux systemd --user). Advanced service management:
+#   ./start-worker --install-service    Install and start the login service now
+#   ./start-worker --start              Start an already-installed login service
+#   ./start-worker --stop               Stop the login service (without uninstalling)
+#   ./start-worker --restart-service    Restart the running login service
+#   ./start-worker --uninstall-service  Stop and remove the login service
+#   ./start-worker --status             Show whether the background worker service is running
+#   ./start-worker --logs [-n N] [-f]   Show the last N log lines; -f to follow live
+#   ./start-worker --non-interactive    Start without prompting to install a service
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+SERVICE_LABEL="com.manta.worker"
+SERVICE_NAME="manta-worker"
+LOG_DIR="${HOME}/.manta/logs"
+
+install_service() {
+  local start_now="${1:-1}"
+  mkdir -p "$LOG_DIR"
+
+  case "$(uname -s)" in
+    Darwin)
+      local plist_dir plist
+      plist_dir="${HOME}/Library/LaunchAgents"
+      plist="${plist_dir}/${SERVICE_LABEL}.plist"
+      mkdir -p "$plist_dir"
+      cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${SERVICE_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${SHELL}</string>
+    <string>-lc</string>
+    <string>cd '${SCRIPT_DIR}' &amp;&amp; exec ./start-worker --non-interactive</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${PATH}</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/worker.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/worker.err.log</string>
+</dict>
+</plist>
+PLIST
+      if [[ "$start_now" == "1" ]]; then
+        launchctl bootout "gui/${UID}" "$plist" >/dev/null 2>&1 || true
+        launchctl bootstrap "gui/${UID}" "$plist"
+        launchctl enable "gui/${UID}/${SERVICE_LABEL}"
+        launchctl kickstart -k "gui/${UID}/${SERVICE_LABEL}"
+      fi
+      echo "Installed ${SERVICE_LABEL}. Logs: ${LOG_DIR}/worker.out.log and ${LOG_DIR}/worker.err.log"
+      ;;
+    Linux)
+      if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Error: systemctl not found; cannot install a systemd user service." >&2
+        exit 1
+      fi
+      local unit_dir unit
+      unit_dir="${HOME}/.config/systemd/user"
+      unit="${unit_dir}/${SERVICE_NAME}.service"
+      mkdir -p "$unit_dir"
+      cat > "$unit" <<UNIT
+[Unit]
+Description=Manta worker daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${SHELL} -lc 'exec ./start-worker --non-interactive'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+      systemctl --user daemon-reload
+      if [[ "$start_now" == "1" ]]; then
+        systemctl --user enable --now "${SERVICE_NAME}.service"
+      else
+        systemctl --user enable "${SERVICE_NAME}.service"
+      fi
+      echo "Installed ${SERVICE_NAME}.service. Logs: journalctl --user -u ${SERVICE_NAME} -f"
+      echo "It starts when you log in. For boot-before-login, run: loginctl enable-linger ${USER}"
+      ;;
+    *)
+      echo "Error: unsupported OS for service install: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+service_installed() {
+  case "$(uname -s)" in
+    Darwin)
+      [[ -f "${HOME}/Library/LaunchAgents/${SERVICE_LABEL}.plist" ]]
+      ;;
+    Linux)
+      [[ -f "${HOME}/.config/systemd/user/${SERVICE_NAME}.service" ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+maybe_prompt_install_service() {
+  if [[ "${NON_INTERACTIVE}" == "1" ]]; then
+    return
+  fi
+  # Only prompt humans. Service launches and scripts should run the worker
+  # directly without blocking for input.
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    return
+  fi
+  if service_installed; then
+    return
+  fi
+
+  case "$(uname -s)" in
+    Darwin|Linux) ;;
+    *) return ;;
+  esac
+
+  local answer
+  echo
+  read -r -p "Install Manta worker to start automatically at login? [y/N] " answer
+  case "$answer" in
+    [Yy]|[Yy][Ee][Ss])
+      install_service 0
+      echo "The worker will start automatically at next login. Continuing in this terminal for first-time setup."
+      ;;
+    *)
+      echo "Continuing in the foreground. You can install later with: ./start-worker --install-service"
+      ;;
+  esac
+}
+
+restart_service() {
+  case "$(uname -s)" in
+    Darwin)
+      local plist
+      plist="${HOME}/Library/LaunchAgents/${SERVICE_LABEL}.plist"
+      if [[ ! -f "$plist" ]]; then
+        echo "Error: service not installed. Run ./start-worker --install-service first." >&2
+        exit 1
+      fi
+      launchctl kickstart -k "gui/${UID}/${SERVICE_LABEL}"
+      echo "Restarted ${SERVICE_LABEL}."
+      ;;
+    Linux)
+      if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Error: systemctl not found." >&2
+        exit 1
+      fi
+      systemctl --user restart "${SERVICE_NAME}.service"
+      echo "Restarted ${SERVICE_NAME}.service."
+      ;;
+    *)
+      echo "Error: unsupported OS: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+stop_service() {
+  case "$(uname -s)" in
+    Darwin)
+      local plist
+      plist="${HOME}/Library/LaunchAgents/${SERVICE_LABEL}.plist"
+      if [[ ! -f "$plist" ]]; then
+        echo "Error: service not installed. Run ./start-worker --install-service first." >&2
+        exit 1
+      fi
+      launchctl bootout "gui/${UID}" "$plist"
+      echo "Stopped ${SERVICE_LABEL}."
+      ;;
+    Linux)
+      if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Error: systemctl not found." >&2
+        exit 1
+      fi
+      systemctl --user stop "${SERVICE_NAME}.service"
+      echo "Stopped ${SERVICE_NAME}.service."
+      ;;
+    *)
+      echo "Error: unsupported OS: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+start_service() {
+  case "$(uname -s)" in
+    Darwin)
+      local plist
+      plist="${HOME}/Library/LaunchAgents/${SERVICE_LABEL}.plist"
+      if [[ ! -f "$plist" ]]; then
+        echo "Error: service not installed. Run ./start-worker --install-service first." >&2
+        exit 1
+      fi
+      launchctl bootstrap "gui/${UID}" "$plist"
+      launchctl kickstart "gui/${UID}/${SERVICE_LABEL}"
+      echo "Started ${SERVICE_LABEL}."
+      ;;
+    Linux)
+      if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Error: systemctl not found." >&2
+        exit 1
+      fi
+      systemctl --user start "${SERVICE_NAME}.service"
+      echo "Started ${SERVICE_NAME}.service."
+      ;;
+    *)
+      echo "Error: unsupported OS: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+uninstall_service() {
+  case "$(uname -s)" in
+    Darwin)
+      local plist
+      plist="${HOME}/Library/LaunchAgents/${SERVICE_LABEL}.plist"
+      launchctl bootout "gui/${UID}" "$plist" >/dev/null 2>&1 || true
+      rm -f "$plist"
+      echo "Uninstalled ${SERVICE_LABEL}."
+      ;;
+    Linux)
+      if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Error: systemctl not found; cannot uninstall a systemd user service." >&2
+        exit 1
+      fi
+      systemctl --user disable --now "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+      rm -f "${HOME}/.config/systemd/user/${SERVICE_NAME}.service"
+      systemctl --user daemon-reload
+      echo "Uninstalled ${SERVICE_NAME}.service."
+      ;;
+    *)
+      echo "Error: unsupported OS for service uninstall: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+worker_status() {
+  case "$(uname -s)" in
+    Darwin)
+      if ! service_installed; then
+        echo "Service not installed. Run ./start-worker --install-service to install it."
+        return 1
+      fi
+      local info state pid exit_code
+      info="$(launchctl print "gui/${UID}/${SERVICE_LABEL}" 2>/dev/null || true)"
+      if [[ -z "$info" ]]; then
+        echo "${SERVICE_LABEL}: installed but not loaded."
+        return 1
+      fi
+      state="$(sed -n 's/^[[:space:]]*state = //p' <<<"$info" | head -n 1)"
+      pid="$(sed -n 's/^[[:space:]]*pid = //p' <<<"$info" | head -n 1)"
+      exit_code="$(sed -n 's/^[[:space:]]*last exit code = //p' <<<"$info" | head -n 1)"
+      echo "${SERVICE_LABEL}"
+      echo "  state:          ${state:-unknown}"
+      echo "  pid:            ${pid:-n/a}"
+      echo "  last exit code: ${exit_code:-n/a}"
+      echo "  logs:           ${LOG_DIR}/worker.out.log"
+      ;;
+    Linux)
+      if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Error: systemctl not found." >&2
+        return 1
+      fi
+      if ! service_installed; then
+        echo "Service not installed. Run ./start-worker --install-service to install it."
+        return 1
+      fi
+      systemctl --user --no-pager status "${SERVICE_NAME}.service"
+      ;;
+    *)
+      echo "Error: unsupported OS: $(uname -s)" >&2
+      return 1
+      ;;
+  esac
+}
+
+worker_logs() {
+  case "$(uname -s)" in
+    Darwin)
+      local out="${LOG_DIR}/worker.out.log" err="${LOG_DIR}/worker.err.log"
+      if [[ ! -f "$out" && ! -f "$err" ]]; then
+        echo "No logs found in ${LOG_DIR}. Is the service installed?" >&2
+        return 1
+      fi
+      if [[ "${FOLLOW_LOGS}" == "1" ]]; then
+        echo "Following ${out} and ${err} (Ctrl-C to stop)..."
+        tail -n 50 -F "$out" "$err"
+      else
+        tail -n "${LOG_LINES}" "$out" "$err"
+      fi
+      ;;
+    Linux)
+      if ! command -v journalctl >/dev/null 2>&1; then
+        echo "Error: journalctl not found." >&2
+        return 1
+      fi
+      if [[ "${FOLLOW_LOGS}" == "1" ]]; then
+        journalctl --user -u "${SERVICE_NAME}" -n 50 -f
+      else
+        journalctl --user -u "${SERVICE_NAME}" -n "${LOG_LINES}" --no-pager
+      fi
+      ;;
+    *)
+      echo "Error: unsupported OS: $(uname -s)" >&2
+      return 1
+      ;;
+  esac
+}
+
+NON_INTERACTIVE=0
+FOLLOW_LOGS=0
+LOG_LINES=50
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --install-service)
+      install_service
+      exit 0
+      ;;
+    --start)
+      start_service
+      exit 0
+      ;;
+    --stop)
+      stop_service
+      exit 0
+      ;;
+    --restart-service)
+      restart_service
+      exit 0
+      ;;
+    --uninstall-service)
+      uninstall_service
+      exit 0
+      ;;
+    --status)
+      worker_status
+      exit $?
+      ;;
+    --logs)
+      shift
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -f|--follow) FOLLOW_LOGS=1; shift ;;
+          -n) LOG_LINES="${2:-50}"; shift 2 ;;
+          -n*) LOG_LINES="${1#-n}"; shift ;;
+          *) break ;;
+        esac
+      done
+      worker_logs
+      exit $?
+      ;;
+    --non-interactive)
+      NON_INTERACTIVE=1
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: ./start-worker [--install-service|--start|--stop|--restart-service|--uninstall-service|--status|--logs|--non-interactive]"
+      echo "Run without flags to start the worker in the foreground and prompt once to install at login."
+      echo
+      echo "  --install-service     Install and start the login service now"
+      echo "  --start               Start an already-installed login service"
+      echo "  --stop                Stop the login service (without uninstalling)"
+      echo "  --restart-service     Restart the running login service"
+      echo "  --uninstall-service   Stop and remove the login service"
+      echo "  --status              Show whether the background worker service is running"
+      echo "  --logs [-n N] [-f]    Show the last N (default 50) log lines; -f/--follow to tail live"
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+maybe_prompt_install_service
+
+# ── Adopt the user's interactive shell environment ───────────────────────────
+# The installed service starts this script via `$SHELL -lc` (see the launchd
+# plist and systemd unit above): a login but NON-interactive shell, so zsh and
+# bash never source .zshrc / .bashrc. Anything exported there — repo database
+# URLs, tool credentials — is present when a human runs ./start-worker in a
+# terminal and silently absent for the background service, so agent commands
+# fail with "FOO not set" only under the service. Diff the two environments on
+# every start and adopt whatever the interactive shell adds or changes.
+#
+# Snapshot $SHELL's environment. $1 = shell flags, $2 = output file. Records are
+# separated by RS (0x1E) rather than newlines so multi-line values stay intact;
+# NUL can't be used because BSD awk won't take it as a record separator. stdin is
+# /dev/null and the child is killed after 10s so an rc file that prompts or
+# hangs can't wedge the worker.
+ENV_RS=$'\036'
+shell_env_snapshot() {
+  local flags="$1" out="$2" pid waited=0
+  : >"$out"
+  "$SHELL" $flags 'env -0 | tr "\0" "\036"' >"$out" 2>/dev/null </dev/null &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= 100 )); then
+      kill -9 "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true   # reap quietly; else bash prints "Killed: 9"
+      : >"$out"
+      return 1
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null || true
+  [[ -s "$out" ]]
+}
+
+adopt_interactive_env() {
+  [[ -n "${SHELL:-}" && -x "${SHELL:-}" ]] || return 0
+
+  local login_env ilogin_env inonlogin_env adopted
+  login_env="$(mktemp)"; ilogin_env="$(mktemp)"; inonlogin_env="$(mktemp)"; adopted="$(mktemp)"
+
+  # Two interactive shapes, because the shells disagree about which one reads the
+  # rc file: zsh sources .zshrc for both, but bash reads .bash_profile for an
+  # interactive LOGIN shell and .bashrc only for a NON-login one. Taking the union
+  # covers either shell. A snapshot that times out is simply left empty.
+  if shell_env_snapshot "-lc" "$login_env"; then
+    shell_env_snapshot "-ic" "$inonlogin_env" || true
+    shell_env_snapshot "-ilc" "$ilogin_env" || true
+
+    # Entries (whole KEY=VALUE) an interactive shell has that the login shell does
+    # not — so a var whose *value* differs is adopted too. Session- and
+    # shell-internal names are skipped; PATH is excluded because the service
+    # already pins its own. Values containing newlines are skipped rather than
+    # risk mis-quoting them. The -ilc snapshot is read last so it wins on
+    # conflicts: it is the closest match to what a real terminal hands the user.
+    awk -v RS="$ENV_RS" -v login="$login_env" '
+      FILENAME == login { in_login[$0] = 1; next }
+      {
+        eq = index($0, "=")
+        if (eq < 2) next
+        key = substr($0, 1, eq - 1)
+        val = substr($0, eq + 1)
+        # Matching the login shell normally means nothing to adopt — but not once
+        # an earlier interactive snapshot has claimed the key: the later snapshot
+        # is authoritative, so let it overwrite that value rather than leaving the
+        # earlier disagreement standing.
+        if (($0 in in_login) && !(key in seen)) next
+        # Conventional env vars are upper-case; lower-case and leading-underscore
+        # names are prompt/plugin scratch state (_gitstatus_plugin_dir, line).
+        # NODE_OPTIONS is excluded because this runs before the daemon launches:
+        # a stray flag in a user shell would break the worker own Node runtime.
+        # NOTE: no apostrophes anywhere in this awk program -- it is passed as a
+        # single-quoted shell string, so one would silently truncate it.
+        if (key !~ /^[A-Z][A-Z0-9_]*$/) next
+        if (key ~ /^(PWD|OLDPWD|SHLVL|PATH|FPATH|CDPATH|MANPATH|INFOPATH|SHELL|HOME|USER|LOGNAME|HOSTNAME|TERM|COLORTERM|COLUMNS|LINES|WINDOWID|TMPDIR|SECONDS|RANDOM|PERIOD|RETURN_CODE|MATCH|MBEGIN|MEND|PS[0-9]|RPS[0-9]|BASE_RPS[0-9]|PROMPT|RPROMPT|LS_COLORS|LSCOLORS|LANG|LC_[A-Z_]+|HIST[A-Z_]*|ZSH[A-Z_]*|ZPLUG[A-Z_]*|BASH[A-Z_]*|COMP[A-Z_]*|TERM_[A-Z_]*|ITERM[A-Z0-9_]*|NODE_OPTIONS)$/) next
+        if (val ~ /\n/) next
+        gsub(/'\''/, "'\''\"'\''\"'\''", val)
+        if (!(key in seen)) { order[++n] = key; seen[key] = 1 }
+        line[key] = key "='\''" val "'\''"
+      }
+      END { for (i = 1; i <= n; i++) print line[order[i]] }
+    ' "$login_env" "$inonlogin_env" "$ilogin_env" >"$adopted" || {
+      echo "Warning: could not read the interactive shell environment; starting without it." >&2
+      : >"$adopted"
+    }
+
+    if [[ -s "$adopted" ]]; then
+      # shellcheck disable=SC1090
+      set -a; source "$adopted"; set +a
+      echo "Adopted from your interactive shell: $(sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$adopted" | tr '\n' ' ')"
+    fi
+  fi
+
+  rm -f "$login_env" "$ilogin_env" "$inonlogin_env" "$adopted"
+}
+
+adopt_interactive_env
+
+# Load .worker.env if present. It is sourced after the interactive-shell
+# adoption above, so an explicit entry here always wins.
+# A value already provided by the caller wins,
+# so ./start-local-worker can set its own localhost default.
+MANTA_SERVER_URL_ENV="${MANTA_SERVER_URL-}"
+MANTA_SERVER_URL_WAS_SET="${MANTA_SERVER_URL+x}"
+if [[ -f ".worker.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a; source .worker.env; set +a
+fi
+if [[ -n "$MANTA_SERVER_URL_WAS_SET" ]]; then
+  MANTA_SERVER_URL="$MANTA_SERVER_URL_ENV"
+fi
+
+: "${MANTA_SERVER_URL:=wss://manta.example.com}"
+export MANTA_SERVER_URL
+
+# ── Node.js 22+ ──────────────────────────────────────────────────────────────
+if ! command -v node &>/dev/null; then
+  echo "Error: Node.js not found. Install Node.js 22+ from https://nodejs.org" >&2
+  exit 1
+fi
+NODE_MAJOR=$(node --version | sed 's/v\([0-9]*\)\..*/\1/')
+if [[ "$NODE_MAJOR" -lt 22 ]]; then
+  echo "Error: Node.js 22+ required (found: $(node --version))" >&2
+  exit 1
+fi
+
+# ── pnpm ─────────────────────────────────────────────────────────────────────
+if ! command -v pnpm &>/dev/null; then
+  echo "pnpm not found — installing..."
+  npm install -g pnpm
+fi
+
+install_deps() {
+  echo "Checking dependencies..."
+  pnpm install --filter "@manta/worker-daemon..." --silent
+}
+
+force_update_repo() {
+  local remote remote_default target
+
+  if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+    echo "Stashing local changes before update..."
+    git stash push --include-untracked -m "manta worker auto-stash before update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
+
+  remote="$(git remote | grep -x origin || true)"
+  if [[ -z "$remote" ]]; then
+    remote="$(git remote | head -n 1)"
+  fi
+  if [[ -z "$remote" ]]; then
+    echo "Error: no git remote configured for worker update." >&2
+    exit 1
+  fi
+
+  echo "Fetching latest code from ${remote}..."
+  git fetch --prune "$remote"
+
+  # Always update to the remote's default branch, not the currently checked-out
+  # branch. This recovers workers accidentally left on a feature branch while
+  # avoiding a hardcoded branch name.
+  remote_default="$(git symbolic-ref --quiet --short "refs/remotes/${remote}/HEAD" 2>/dev/null | sed "s#^${remote}/##" || true)"
+  if [[ -z "$remote_default" ]]; then
+    remote_default="$(git remote show "$remote" 2>/dev/null | sed -n 's/.*HEAD branch: //p' | head -n 1)"
+    if [[ "$remote_default" == "(unknown)" ]]; then
+      remote_default=""
+    fi
+  fi
+  if [[ -z "$remote_default" ]]; then
+    remote_default="$(git ls-remote --symref "$remote" HEAD 2>/dev/null | sed -n 's#^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$#\1#p' | head -n 1)"
+  fi
+  if [[ -z "$remote_default" ]]; then
+    echo "Error: could not determine ${remote}'s default branch." >&2
+    exit 1
+  fi
+
+  target="${remote}/${remote_default}"
+  echo "Resetting worker checkout to ${target}..."
+  git checkout -B "$remote_default" "$target"
+  git branch --set-upstream-to="$target" "$remote_default" >/dev/null 2>&1 || true
+}
+
+install_deps
+
+# ── Run loop ─────────────────────────────────────────────────────────────────
+# Exit 42 = update requested: stash dirty work, force-fetch/reset to the remote default branch, reinstall, restart.
+# Exit 1  = pairing failed/timed out: stop immediately (needs human approval).
+# Exit 0  = intentional stop (Ctrl-C forwarded as 0 via trap below).
+# Anything else = unexpected crash: stop and let the user investigate.
+
+while true; do
+  echo "Starting Manta worker (server: ${MANTA_SERVER_URL})"
+  set +e
+  node --experimental-transform-types apps/worker-daemon/src/daemon.ts "$@"
+  EXIT_CODE=$?
+  set -e
+
+  case $EXIT_CODE in
+    0|130|143)   # 0=clean, 130=Ctrl-C (SIGINT), 143=SIGTERM
+      echo "Worker stopped."
+      exit 0
+      ;;
+    42)
+      echo "Update requested — force-updating latest code..."
+      force_update_repo
+      install_deps
+      echo "Update complete — restarting."
+      exec "$0" --non-interactive
+      ;;
+    1)  # pairing failed/timed out — needs human approval, no point retrying
+      echo "Error: pairing failed or timed out. Re-run ./start-worker to try again." >&2
+      exit 1
+      ;;
+    *)
+      echo "Worker exited unexpectedly (code $EXIT_CODE) — stopping." >&2
+      exit "$EXIT_CODE"
+      ;;
+  esac
+done

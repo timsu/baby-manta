@@ -1,0 +1,25 @@
+{
+  "name": "@manta/worker-daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "manta-worker": "./src/daemon.ts"
+  },
+  "scripts": {
+    "start": "node --experimental-transform-types src/daemon.ts",
+    "dev": "node --experimental-transform-types --env-file-if-exists=.env.local src/daemon.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@manta/agent": "workspace:*",
+    "@manta/shared": "workspace:*",
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "^1.69.0",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.7.2"
+  }
+}

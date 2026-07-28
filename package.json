@@ -1,0 +1,35 @@
+{
+  "name": "manta",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Baby Manta — hosted, multi-company engineering orchestrator.",
+  "type": "module",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "./scripts/dev.sh",
+    "dev:open": "./scripts/dev.sh open",
+    "build": "pnpm -r build",
+    "db:reset": "pnpm dlx neonctl branch reset dev --parent",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "pnpm -r lint",
+    "postinstall": "pnpm --filter @manta/db generate && chmod +x node_modules/.pnpm/node-pty@*/node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "fast-check": "^3.23.2",
+    "concurrently": "^9.1.0",
+    "@types/node": "^24.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "prisma", "@prisma/client", "@prisma/engines", "node-pty"],
+    "overrides": {
+      "protobufjs@8.0.1": "8.6.2"
+    }
+  }
+}

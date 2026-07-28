@@ -1,0 +1,24 @@
+{
+  "name": "@manta/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./kanban": "./src/kanban.ts",
+    "./events": "./src/events.ts",
+    "./prTitle": "./src/prTitle.ts",
+    "./setup": "./src/setup.ts",
+    "./buildInfo": "./src/buildInfo.ts",
+    "./terminal": "./src/terminal-pty.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  }
+}

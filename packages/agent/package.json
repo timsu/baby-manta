@@ -1,0 +1,21 @@
+{
+  "name": "@manta/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.81.1",
+    "@earendil-works/pi-coding-agent": "^0.81.1",
+    "@manta/shared": "workspace:*",
+    "typebox": "^1.1.24"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

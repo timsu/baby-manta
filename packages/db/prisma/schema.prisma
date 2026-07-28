@@ -1,0 +1,833 @@
+// Manta schema. Generated from docs/DATA_MODEL.md. Workspace = company/team.
+// Model names PascalCase; tables snake_case via @@map; columns camelCase
+// (converged with the platform conventions). NEVER hand-write migrations — use
+// `pnpm --filter @manta/db migrate --name <n>` (prisma migrate dev).
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Tenancy ───────────────────────────────
+
+model Workspace {
+  id          String          @id @default(cuid())
+  slug        String          @unique
+  name        String
+  settings    Json            @default("{}")
+  brainPrompt String          @default("") @db.Text
+  teamMemory  String          @default("") @db.Text
+  status      WorkspaceStatus @default(active)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  members             Membership[]
+  identities          WorkspaceIdentity[]
+  secrets             WorkspaceSecret[]
+  repos               Repo[]
+  cardImages          CardImage[]
+  tasks               Task[]
+  spotCheckRuns       SpotCheckRun[]
+  messages            Message[]
+  permSessions        PermSession[]
+  slackBots           SlackBot[]
+  slackMessageSchedules SlackMessageSchedule[]
+  invitations         Invitation[]
+
+  @@map("workspaces")
+}
+
+enum WorkspaceStatus {
+  active
+  suspended
+}
+
+model User {
+  id        String   @id @default(cuid())
+  googleSub String   @unique
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+  // GitHub identity, captured via the per-user "Link GitHub" OAuth flow. Used to
+  // tell which open PRs belong to "me" on the board. Null until the user links.
+  githubLogin  String?
+  githubUserId String?
+  // Slack identity, auto-linked the first time the user messages a Manta Slack
+  // bot from a Slack account whose email matches this user's email. Null until
+  // that match happens; surfaced as "Slack linked/not linked" in the UI.
+  slackUserId  String?  @unique
+  // Linear identity, auto-linked by matching this user's email to a Linear
+  // workspace member after the workspace connects Linear. Null until matched.
+  linearUserId String?  @unique
+  linearName   String?
+  // Per-user onboarding preference: hide the local worker prompt for people who
+  // only want to use cloud sandboxes.
+  localWorkerOnboardingDismissed Boolean @default(false)
+  // Workspace admins can mark users who should not be treated as engineers for
+  // PR ownership/review routing. Defaults to engineer unless explicitly marked.
+  nonEngineer Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  Membership[]
+  repoPersonal RepoPersonal[]
+  workerCredentials WorkerCredential[]
+  userSecrets UserSecret[]
+
+  @@map("users")
+}
+
+// A long-lived token that binds a worker daemon to a user. Minted via the
+// one-time browser pairing flow; the daemon stores the plaintext and presents
+// it on every connection. We persist only the SHA-256 hash. Tasks route to a
+// daemon whose owner matches the task's creator (createdBy).
+model WorkerCredential {
+  id         String    @id @default(cuid())
+  userId     String
+  // Human label for the machine (defaults to the daemon's hostname).
+  name       String
+  // SHA-256 of the plaintext token — the token itself is never stored.
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("worker_credentials")
+}
+
+// A short-lived token that authorizes a single Daytona-sandbox worker to act on
+// exactly ONE task. Unlike WorkerCredential (per-user, pairs via the browser),
+// this is minted server-side when a cloud venue is provisioned, injected into
+// the sandbox env, and revoked when the venue spins down or the task finishes.
+// No user, no handshake — scoped to (taskId, workspaceId) only. SHA-256 hashed.
+model SandboxCredential {
+  id          String    @id @default(cuid())
+  taskId      String
+  workspaceId String
+  tokenHash   String    @unique
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+
+  // FK so deleting a task cascades its tokens — no orphaned credential rows.
+  // (workspaceId stays a denormalized column for token-scoped verify(); the task
+  // already cascades from its workspace, so a separate Workspace FK is redundant.)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("sandbox_credentials")
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  userId         String
+  workspaceId    String
+  role           Role     @default(member)
+  personalMemory String   @default("") @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@map("memberships")
+}
+
+enum Role {
+  owner
+  admin
+  member
+}
+
+// Shareable invite codes. One code can admit many people (a link you paste in
+// chat) until it's revoked or expires. Membership creation is the source of
+// truth for who's in; an Invitation only authorizes joining.
+model Invitation {
+  id          String    @id @default(cuid())
+  workspaceId String
+  code        String    @unique
+  role        Role      @default(member)
+  createdBy   String
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("invitations")
+}
+
+model WorkspaceIdentity {
+  id          String   @id @default(cuid())
+  workspaceId String
+  provider    Provider
+  externalId  String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalId])
+  @@index([workspaceId])
+  @@map("workspace_identities")
+}
+
+enum Provider {
+  github
+  linear
+  slack
+  google
+}
+
+model WorkspaceSecret {
+  id          String     @id @default(cuid())
+  workspaceId String
+  kind        SecretKind
+  ciphertext  Bytes
+  meta        Json       @default("{}")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, kind])
+  @@map("workspace_secrets")
+}
+
+enum SecretKind {
+  github_app_install
+  linear_app
+  linear_oauth
+  notion_oauth
+  slack_bot
+  slack_app
+  slack_user
+  anthropic
+  openai
+  pi
+  pg_provider
+}
+
+// Per-user encrypted credentials (subscription-based providers like Codex).
+// Scoped to the user, not the workspace — a ChatGPT subscription belongs to
+// the person, so tasks route to the creator's credential and fall back to the
+// workspace member pool. API-key providers remain in WorkspaceSecret.
+model UserSecret {
+  id         String   @id @default(cuid())
+  userId     String
+  kind       String   // "pi" — the Pi auth.json blob for subscription providers
+  ciphertext Bytes
+  meta       Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind])
+  @@map("user_secrets")
+}
+
+// ─────────────────────────────── Tasks ───────────────────────────────
+
+model Task {
+  id          String @id // "c-XXXX" / "rev-<cuid>"
+  workspaceId String
+
+  // User who created the card (UI/chat). Null for cards opened by automation
+  // (poller, Slack, Linear) — those land in the "Unassigned" swimlane. Plain
+  // userId column (no relation), mirroring Invitation.createdBy.
+  createdBy   String?
+
+  name        String
+  title       String
+  description String   @db.Text
+  kind        TaskKind
+  cardType    CardType
+  cardStatus  CardStatus  @default(bot_working)
+  doneReason  DoneReason?
+  hidden      Boolean     @default(false)
+  backgroundMode String?
+
+  repo         String
+  branch       String?
+  worktreePath String?
+
+  workerStatus  WorkerStatus @default(pending)
+  workerActive  Boolean      @default(false)
+  workerBackend String
+  model         String?
+  effort        Effort?
+  modelReasoning String?
+
+  sandboxId      String?
+  sessionBlobKey String?
+
+  // Where this task's coding work currently lives, and its lifecycle state.
+  // The branch (+ sessionBlobKey) is the durable artifact; a venue is an
+  // ephemeral checkout that can move between laptop and a Daytona sandbox.
+  workerVenue    WorkerVenue @default(none)
+  venueStatus    VenueStatus @default(none)
+  venueStoppedAt DateTime?
+
+  priority  Int?
+  type      TaskType?
+  startedAt DateTime?
+
+  characterName  String?
+  characterEmoji String?
+  characterSound String?
+
+  checklist Json @default("[]")
+  terminalTabs Json @default("[]")
+
+  // Markdown plan produced by plan-mode cards. Shown in the card detail pane
+  // after the worker calls plan_ready and hands the card back to a human.
+  planDocument String? @db.Text
+
+  prNumber    Int?
+  prUrl       String?
+  prTitle     String?
+  prState     String?
+  prUpdatedAt DateTime?
+  prCache     Json?
+
+  checks         Json         @default("[]")
+  checksStatus   ChecksStatus @default(unknown)
+  reviewComments Json         @default("[]")
+  reviewDecision    String?
+  mergeable         Mergeable @default(UNKNOWN)
+  autoMergeEnabled  Boolean   @default(false)
+
+  contextUsage  Json?
+  contextWarned Boolean @default(false)
+
+  pgProfile   String?
+  paused      Boolean @default(false)
+  staleClient Boolean @default(false)
+
+  slackChannel           String?
+  slackThreadTs          String?
+  slackUserId            String?
+  // Which SlackBot originated this card; lets the outbound notifier post the
+  // Done/ready/needs_help update back with the right bot's token.
+  slackBotId             String?
+  slackPrLinkPosted      Boolean @default(false)
+  slackDmSent            Boolean @default(false)
+  slackTriageIssuePosted Boolean @default(false)
+
+  triageIssueUrl        String?
+  linearAssignment      Json?
+  linearTriage          Json?
+  linearIssueIdentifier String?
+  linearIssueUrl        String?
+  linearCommentPosted   Boolean @default(false)
+
+  transitions Json      @default("[]")
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  taskNumber  Int?
+
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transitionLog    TaskTransition[]
+  sandboxCredentials SandboxCredential[]
+  // Originating Slack bot (when spawned from Slack). SetNull so deleting a bot
+  // doesn't cascade-delete its cards — they just lose the notifier back-pointer.
+  slackBot         SlackBot?        @relation(fields: [slackBotId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, cardStatus])
+  @@index([slackBotId])
+  @@map("tasks")
+}
+
+enum TaskKind {
+  agent
+  self
+  skill
+  review
+  pr_review
+}
+
+enum CardType {
+  bot
+  investigation
+  interactive
+  backlog
+  plan
+}
+
+enum CardStatus {
+  backlog
+  bot_working
+  needs_help
+  ready_to_test
+  interactive
+  pr_review
+  investigation_complete
+  done
+  canceled
+}
+
+enum DoneReason {
+  merged
+  abandoned
+  completed
+  investigation_complete
+  closed_unmerged
+}
+
+model SpotCheckRun {
+  id            String @id @default(cuid())
+  workspaceId   String
+  spotCheckId   String
+  spotCheckName String
+  taskId        String?
+  verdict       SpotCheckVerdict @default(unknown)
+  summary       String @db.Text
+  report        String @db.Text
+  startedAt     DateTime
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, startedAt])
+  @@index([workspaceId, spotCheckId])
+  @@map("spot_check_runs")
+}
+
+enum SpotCheckVerdict {
+  pass
+  warn
+  fail
+  unknown
+}
+
+enum WorkerStatus {
+  pending
+  spawning
+  running
+  pr_created
+  done
+  failed
+  stalled
+  archived
+}
+
+enum Effort {
+  low
+  medium
+  high
+}
+
+// Which compute venue runs a task's coding work. `laptop` = a BYO worker daemon
+// on the developer's machine (human-authored PRs). `daytona` = a server-managed,
+// per-tenant-isolated Daytona sandbox (bot-authored PRs). `none` = no live venue
+// (the branch may still exist on GitHub).
+enum WorkerVenue {
+  none
+  laptop
+  daytona
+}
+
+// Lifecycle of the task's current venue. `idle` = sandbox alive but no turn
+// running (still billing — eligible for spindown). `stopped` = venue torn down;
+// branch persists on GitHub and the task can be resumed elsewhere.
+enum VenueStatus {
+  none
+  provisioning
+  active
+  idle
+  stopped
+  failed
+}
+
+enum TaskType {
+  bug
+  feature
+  investigation
+  task
+  epic
+  chore
+}
+
+enum ChecksStatus {
+  pending
+  passing
+  failing
+  unknown
+}
+
+enum Mergeable {
+  MERGEABLE
+  CONFLICTING
+  UNKNOWN
+}
+
+model TaskTransition {
+  id          String         @id @default(cuid())
+  taskId      String
+  workspaceId String
+  fromStatus  CardStatus
+  toStatus    CardStatus
+  by          TransitionActor
+  reason      String?
+  at          DateTime       @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_transitions")
+}
+
+enum TransitionActor {
+  worker
+  brain
+  poller
+  human
+}
+
+// ─────────────────────────── Conversations ───────────────────────────
+
+model Message {
+  id          String      @id @default(cuid())
+  workspaceId String
+  channel     String
+  seq         Int
+  role        MessageRole
+  content     String      @db.Text
+  meta        Json?
+  images      Json?
+  ts          DateTime    @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, channel, seq])
+  @@map("messages")
+}
+
+enum MessageRole {
+  user
+  assistant
+  status
+  system
+}
+
+model AgentSession {
+  id             String      @id @default(cuid())
+  workspaceId    String
+  channel        String
+  kind           SessionKind
+  backend        String
+  sleepUntil     DateTime?
+  sleepWorkerId  String?
+  sessionBlobKey String?
+  flags          Json        @default("{}")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([workspaceId, channel])
+  @@map("agent_sessions")
+}
+
+enum SessionKind {
+  brain
+  scout
+  support
+  style
+  custom
+}
+
+model InboxItem {
+  id          String      @id @default(cuid())
+  workspaceId String
+  channel     String
+  body        String      @db.Text
+  source      InboxSource
+  consumedAt  DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([workspaceId, channel, consumedAt])
+  @@map("inbox_items")
+}
+
+enum InboxSource {
+  poller
+  worker
+  peer
+  perm_session
+  linear
+  slack
+}
+
+// ──────────────────────── Non-task sessions ────────────────────────
+
+model PermSession {
+  id           String  @id @default(cuid())
+  workspaceId  String
+  slug         String
+  label        String
+  dir          String?
+  systemPrompt String? @db.Text
+  initMessage  String? @db.Text
+  backend      String
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, slug])
+  @@map("perm_sessions")
+}
+
+model ScratchSession {
+  id          String      @id // ws-<cuid> / rev-<cuid>
+  workspaceId String
+  kind        ScratchKind
+  repo        String
+  branch      String?
+  prNumber    Int?
+  sandboxId   String?
+  expiresAt   DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([workspaceId])
+  @@map("scratch_sessions")
+}
+
+enum ScratchKind {
+  scratch
+  review
+}
+
+// ───────────────────── Integrations & background ─────────────────────
+
+model Repo {
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  orgRepo            String
+  defaultBranch      String    @default("main")
+  kindHint           TaskKind?
+  enabled            Boolean   @default(true)
+  setupCommands      String    @default("") @db.Text
+  globalInstructions String    @default("") @db.Text
+  skillRepos         Json      @default("[]")
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  personal  RepoPersonal[]
+
+  @@unique([workspaceId, orgRepo])
+  @@map("repos")
+}
+
+model RepoPersonal {
+  id           String @id @default(cuid())
+  userId       String
+  repoId       String
+  instructions String @default("") @db.Text
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repo Repo @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, repoId])
+  @@map("repo_personal")
+}
+
+model WebhookDelivery {
+  id          String   @id @default(cuid())
+  provider    Provider
+  eventId     String
+  workspaceId String?
+  kind        String
+  payload     Json
+  routedTo    String?
+  receivedAt  DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@map("webhook_deliveries")
+}
+
+model PgProfile {
+  id          String     @id @default(cuid())
+  workspaceId String
+  name        String
+  provider    PgProvider
+  branchRef   String
+  meta        Json       @default("{}")
+
+  @@unique([workspaceId, name])
+  @@map("pg_profiles")
+}
+
+enum PgProvider {
+  neon
+  supabase
+  crunchy
+  other
+}
+
+model SpotcheckRun {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  checkName      String
+  status         String
+  report         String    @default("") @db.Text
+  logs           String    @default("") @db.Text
+  acknowledgedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  findings SpotcheckFinding[]
+
+  @@index([workspaceId])
+  @@map("spotcheck_runs")
+}
+
+model SpotcheckFinding {
+  id     String        @id @default(cuid())
+  runId  String
+  status FindingStatus @default(new)
+  body   Json
+
+  run SpotcheckRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@map("spotcheck_findings")
+}
+
+enum FindingStatus {
+  new
+  acknowledged
+  actioned
+  dismissed
+  stale
+}
+
+model SpotcheckSetting {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  checkName    String
+  intervalMs   Int
+  workingHours Json?
+  enabled      Boolean  @default(true)
+
+  @@unique([workspaceId, checkName])
+  @@map("spotcheck_settings")
+}
+
+model DmLog {
+  id              String   @id @default(cuid())
+  fromUserId      String
+  fromWorkspaceId String
+  toWorkspaceId   String?
+  toExternal      String?
+  body            String   @db.Text
+  isReply         Boolean  @default(false)
+  sentAt          DateTime @default(now())
+
+  @@map("dm_log")
+}
+
+// ─────────────────────────── Slack bots ───────────────────────────────
+// One Manta workspace ↔ one Slack workspace (team) ↔ many bots. Each bot is its
+// own Slack app with its own token + signing secret (encrypted at rest), its own
+// operating instructions, and an optional channel allowlist. Inbound events are
+// routed to a bot by `slackAppId` (Slack's api_app_id).
+
+model SlackBot {
+  id                  String          @id @default(cuid())
+  workspaceId         String
+  name                String // display name in the Manta UI
+  slackAppId          String          @unique // api_app_id — routes inbound events to this bot
+  teamId              String? // Slack team id (captured from auth.test)
+  botUserId           String? // bot's own Slack user id (ignore self / detect mention)
+  instructions        String          @db.Text // operating instructions = this bot's system prompt
+  botType             SlackBotType    @default(slack)
+  autoRespondChannels String[]        @default([]) // channel IDs it auto-responds in (empty = mention/DM only)
+  autoRespondChannelInstructions Json      @default("{}") // channel ID → extra instructions for auto-respond turns in that channel
+  spawnCardPolicy     SpawnCardPolicy @default(auto) // auto = brain decides; never = always answer-only
+  defaultRepo         String? // org/repo to assume when Slack requests omit a repo
+  enabled             Boolean         @default(true)
+  botTokenCipher      Bytes // encrypted xoxb token (iv||tag||ciphertext)
+  signingSecretCipher Bytes // encrypted signing secret
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  messageSchedules SlackMessageSchedule[]
+
+  @@unique([id, workspaceId])
+  @@index([workspaceId])
+  @@map("slack_bots")
+}
+
+model SlackMessageSchedule {
+  id             String                    @id @default(cuid())
+  workspaceId    String
+  slackBotId     String
+  name           String
+  channelId      String
+  repo           String?
+  prompt         String                    @db.Text
+  cadence        SlackMessageScheduleCadence
+  timeOfDayUtc   String // HH:mm local wall-clock time in timeZone (legacy field name)
+  dayOfWeekUtc   Int? // deprecated compatibility field; synchronized with daysOfWeek during rollout
+  daysOfWeek     Int[]                     @default([]) // 0 = Sunday in timeZone
+  timeZone       String                    @default("UTC")
+  includeWeekendsAndHolidays Boolean       @default(false)
+  enabled        Boolean                   @default(true)
+  nextRunAt      DateTime
+  lastRunAt      DateTime?
+  lastError      String?                   @db.Text
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  slackBot  SlackBot  @relation(fields: [slackBotId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([slackBotId])
+  @@index([enabled, nextRunAt])
+  @@map("slack_message_schedules")
+}
+
+// ─────────────────────────────── Card images ───────────────────────────────
+
+// Images attached to task cards. Stored server-side so workers receive a URL
+// instead of an inline base64 blob (which blows up the Pi context window).
+model CardImage {
+  id          String   @id @default(cuid())
+  workspaceId String
+  mimeType    String
+  data        String   @db.Text
+  sha256      String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@unique([workspaceId, sha256])
+  @@map("card_images")
+}
+
+enum SlackBotType {
+  slack
+  linear
+}
+
+enum SpawnCardPolicy {
+  auto
+  never
+}
+
+enum SlackMessageScheduleCadence {
+  daily
+  weekly
+}

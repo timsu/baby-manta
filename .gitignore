@@ -1,0 +1,27 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+# Env files are NEVER committed — not even dotenvx-encrypted ones. Ciphertext in
+# a repo is only as safe as the private key, and the key outlives the repo.
+# `.env.example` is the one exception: it holds names and placeholders only.
+.env
+.env.*
+*.local
+.env.keys
+!.env.example
+.DS_Store
+*.log
+.vite/
+playwright-report/
+test-results/
+# Prisma generated client
+packages/db/generated/
+.worker.env
+.claude
+.manta-images/
+.pi/
+
+# Scratch/test artifacts
+.tmp/

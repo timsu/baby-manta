@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="ocean" x1="0" y1="5.5" x2="0" y2="58.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1b7fb8"/>
+      <stop offset="1" stop-color="#0a4d80"/>
+    </linearGradient>
+  </defs>
+  <rect x="5.5" y="5.5" width="53" height="53" rx="12" fill="url(#ocean)"/>
+  <g transform="translate(32 33) scale(0.66) translate(-32 -33)">
+  <path fill="#eaf3fb" d="
+    M32 13
+    C33 9 35 6 37 7
+    C38.5 7.5 39 10 39 13
+    C48 13 58 18 61 33
+    C52 34 45 37 40 43
+    C38 49 35 55 32 60
+    C29 55 26 49 24 43
+    C19 37 12 34 3 33
+    C6 18 16 13 25 13
+    C25 10 26.5 7.5 27 7
+    C29 6 31 9 32 13 Z"/>
+  <circle cx="28.5" cy="18" r="1.6" fill="#0a4d80"/>
+  <circle cx="35.5" cy="18" r="1.6" fill="#0a4d80"/>
+  </g>
+</svg>

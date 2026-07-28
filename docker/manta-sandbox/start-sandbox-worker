@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Launch the Manta worker-daemon in single-task (cloud sandbox) mode.
+#
+# The image bakes the manta repo at /opt/manta plus warm seed clones (platform,
+# from the the sandbox service base), but is rebuilt only periodically — so we refresh git
+# here at boot to run current code without a per-merge image rebuild:
+#   • /opt/manta (the daemon's own source): pull --ff-only, reinstall deps only
+#     if the lockfile moved.
+#   • each seed in MANTA_SEED_REPOS (the platform repo, …): fetch, so task worktrees the
+#     daemon adds off them build on current code.
+# The server has vended GitHub App tokens for all of these into ~/.git-credentials
+# (path-matched) and set the task env. Best-effort: a failed pull/fetch falls back
+# to the baked checkout so the task still starts.
+set -euo pipefail
+cd /opt/manta
+
+before="$(git rev-parse HEAD 2>/dev/null || echo none)"
+if git pull --ff-only 2>/dev/null; then
+  after="$(git rev-parse HEAD)"
+  if [ "$before" != "$after" ] && ! git diff --quiet "$before" "$after" -- pnpm-lock.yaml 2>/dev/null; then
+    pnpm install --frozen-lockfile --filter "@manta/worker-daemon..." || true
+  fi
+fi
+
+# Refresh the warm seed clones (fetch only — the daemon bases worktrees off
+# origin/<default>). MANTA_SEED_REPOS is "repo=path,repo=path".
+#
+# Some seed clones inherited from the base image ship a repo-local
+# `credential.helper=` (empty) in their .git/config. An empty helper value RESETS
+# git's accumulated helper list, discarding the global `store` helper — so the
+# vended ~/.git-credentials is ignored and every fetch dies with "could not read
+# Username for '…': terminal prompts disabled". Drop that local override so the
+# seed inherits the global `store` + useHttpPath config and authenticates like
+# the others (manta seed at /opt/manta is unaffected and skipped below).
+IFS=',' read -ra _seeds <<<"${MANTA_SEED_REPOS:-}"
+for _pair in "${_seeds[@]}"; do
+  _path="${_pair#*=}"
+  [ -n "$_path" ] && [ "$_path" != "/opt/manta" ] && [ -d "$_path/.git" ] || continue
+  git -C "$_path" config --unset-all credential.helper 2>/dev/null || true
+  git -C "$_path" fetch --prune origin 2>/dev/null || true
+done
+
+exec node --experimental-transform-types apps/worker-daemon/src/daemon.ts

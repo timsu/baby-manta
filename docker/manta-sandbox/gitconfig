@@ -1,0 +1,10 @@
+# Baked into the sandbox at /home/ubuntu/.gitconfig. The server vends GitHub App
+# installation tokens into ~/.git-credentials — one per repo (the manta source
+# repo for the boot `git pull`, the task repo for clone/push). useHttpPath makes
+# the `store` helper match credentials per repo path, so the two tokens don't
+# collide on the shared github.com host. Cloud PRs are authored by the App bot.
+[credential]
+	helper = store
+	useHttpPath = true
+[init]
+	defaultBranch = main

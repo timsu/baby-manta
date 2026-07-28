@@ -1,0 +1,17 @@
+schema: spec-driven
+
+context: |
+  Manta is a hosted, multi-company engineering orchestrator. It has a React/Vite web app,
+  a Hono/Node server, worker daemons, workspace/task data in @manta/db, and integrations with
+  GitHub, Linear, and Slack.
+
+notes: |
+  Specs describe observable product and integration behavior that already exists in Manta.
+  They are not HTTP schema documents; route names may be mentioned only to anchor behavior.
+
+rules:
+  specs:
+    - Describe externally observable behavior with SHALL requirements and scenarios.
+    - Prefer durable product capabilities over implementation-specific route groupings.
+    - Cover behavior that exists today; do not add aspirational requirements.
+    - Keep scenarios concise and grounded in the current server behavior.

@@ -1,0 +1,17 @@
+# Installed/generated in-image — never copy from the host.
+node_modules
+**/node_modules
+**/dist
+packages/db/generated
+
+# Secrets — no env file of any kind enters the image. Credentials are injected
+# as environment variables at runtime.
+**/.env
+**/.env.*
+
+# Local noise
+.git
+.github
+*.log
+.DS_Store
+docs

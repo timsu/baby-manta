@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: manta
+          POSTGRES_PASSWORD: manta
+          POSTGRES_DB: manta
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://manta:manta@localhost:5432/manta?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter @manta/db generate
+      - name: Apply migrations
+        run: pnpm --filter @manta/db exec prisma migrate deploy
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit + integration tests
+        run: pnpm test
+  # e2e (Playwright) runs on staging deploy, not in PR CI — see docs/TESTING.md.
