@@ -82,12 +82,15 @@ MANTA_HEALTH_CHECK_SLACK_CHANNEL=C... # Channel for daily health reports
 > longer used for PR state, file trees, or scout — those mint installation tokens scoped
 > to each workspace. Local workers still push as the developer's own `gh` credentials.
 
-### 5. Start the server
+### 5. Start the server + web app
 
 ```bash
 pnpm server
-# Listening on http://localhost:3020
+# server  → http://localhost:3020
+# web app → http://localhost:5173
 ```
+
+`pnpm dev` runs the same two plus a worker daemon.
 
 ### 6. Start a worker daemon
 
@@ -113,7 +116,7 @@ to the in-process cloud bot when your daemon isn't connected.
 
 | Var | Default | Notes |
 |-----|---------|-------|
-| `MANTA_SERVER_URL` | `wss://manta.example.com` | WebSocket URL of the server (`./start-local-worker` defaults to `ws://localhost:3020`) |
+| `MANTA_SERVER_URL` | `ws://localhost:5173` | WebSocket URL of the server. Defaults to the local web app, which proxies `/worker-ws` through and is the origin browser pairing uses. Set it to a deployment's origin to run a worker against it; `./start-local-worker` talks to `ws://localhost:3020` directly instead. |
 | `WORKER_ID` | `hostname-pid` | Stable name shown in logs |
 
 The worker manages its own cached repo clones under `~/.manta/repos/` and creates task worktrees under `~/.manta/worktrees/`.
@@ -131,18 +134,11 @@ Service launches use `./start-worker --non-interactive` so they never block on t
 
 On Linux, the user service starts when you log in. To allow boot-before-login, run `loginctl enable-linger $USER`.
 
-### 7. Start the web UI
-
-```bash
-pnpm web
-# http://localhost:5173
-```
-
 ---
 
 ## Using Manta
 
-1. Open `http://localhost:5173`, sign in with Google.
+1. Open `http://localhost:5173` and sign in — an email address is enough by default; Google appears too when OAuth is configured.
 2. Create a workspace, add repos (Repos button in the header).
 3. Chat with the brain in the left sidebar — "implement X in acme/myrepo".
 4. The brain creates a task card and dispatches it to a worker. Watch the Terminal tab for live output.

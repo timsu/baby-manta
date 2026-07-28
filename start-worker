@@ -11,7 +11,7 @@
 #   0   — clean exit (Ctrl-C or intentional stop)
 #
 # Config (from .worker.env or environment variables):
-#   MANTA_SERVER_URL  WebSocket URL of the Manta server  (default: wss://manta.example.com)
+#   MANTA_SERVER_URL  WebSocket URL of the Manta server  (default: ws://localhost:5173)
 #   WORKER_ID         Stable name for this daemon         (default: hostname-pid)
 #
 # Environment: on every start this script adopts whatever your interactive shell
@@ -532,7 +532,7 @@ if [[ -n "$MANTA_SERVER_URL_WAS_SET" ]]; then
   MANTA_SERVER_URL="$MANTA_SERVER_URL_ENV"
 fi
 
-: "${MANTA_SERVER_URL:=wss://manta.example.com}"
+: "${MANTA_SERVER_URL:=ws://localhost:5173}"
 export MANTA_SERVER_URL
 
 # ── Node.js 22+ ──────────────────────────────────────────────────────────────

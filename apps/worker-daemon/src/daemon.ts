@@ -11,7 +11,9 @@
 // you create route to your own daemon; everyone else's fall back to the bot.
 //
 // Environment variables:
-//   MANTA_SERVER_URL  WebSocket URL of the Manta server (default: wss://manta.example.com)
+//   MANTA_SERVER_URL  WebSocket URL of the Manta server (default: ws://localhost:5173,
+//                     the local web app — it proxies /worker-ws to the server and
+//                     is the origin your browser session lives on, which pairing needs)
 //   WORKER_ID         Override the daemon's id (default: <username>-<hostname>, with
 //                     a -N suffix if another daemon on this box already holds it)
 
@@ -65,7 +67,11 @@ process.env["GIT_TERMINAL_PROMPT"] = "0";
 /** Bump this integer whenever the server protocol changes incompatibly. */
 export const WORKER_VERSION = "20";
 
-const SERVER_URL = (process.env["MANTA_SERVER_URL"] ?? "wss://manta.example.com").replace(/\/$/, "");
+// Defaults to the local web app rather than the server's own port: pairing opens
+// a browser at this origin, and in development the session cookie is set on
+// :5173 (Vite proxies /worker-ws and /api through to the server). Point this at
+// a deployment's origin to run a worker against it.
+const SERVER_URL = (process.env["MANTA_SERVER_URL"] ?? "ws://localhost:5173").replace(/\/$/, "");
 const SERVER_HTTP = SERVER_URL.replace(/^wss?/, (m) => m === "wss" ? "https" : "http");
 const CODING_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const PR_TITLE_GUIDANCE =

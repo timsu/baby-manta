@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Start a Manta worker against a local development server.
+# Start a Manta worker against the server directly, bypassing the web dev server.
+#
+# ./start-worker already defaults to ws://localhost:5173 (the Vite dev server,
+# which proxies through to the API). Use this instead when the server is running
+# without the web app — note that browser pairing then happens on :3020, so sign
+# in on that origin first.
 
 set -euo pipefail
 
