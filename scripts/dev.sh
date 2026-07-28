@@ -11,11 +11,15 @@ SERVER_PORT="${PORT:-3020}"
 PID_FILE="${MANTA_DEV_PID_FILE:-/tmp/manta-dev.pid}"
 KILL_OTHERS=true
 OPEN_BROWSER=false
+RUN_WORKER=true
 
 for arg in "$@"; do
   case "$arg" in
     --no-kill)
       KILL_OTHERS=false
+      ;;
+    --no-worker)
+      RUN_WORKER=false
       ;;
     open|--open)
       OPEN_BROWSER=true
@@ -99,9 +103,20 @@ fi
 SERVER_CMD="PORT=${SERVER_PORT} pnpm --filter @manta/server dev"
 WORKER_CMD="pnpm --filter @manta/worker-daemon dev"
 
-pnpm exec concurrently \
-  -n server,web,worker \
-  -c blue,green,magenta \
-  "$SERVER_CMD" \
-  "$WEB_CMD" \
-  "$WORKER_CMD"
+# --no-worker (used by `pnpm server`) brings up just the API + SPA. The worker
+# daemon is the piece that wants repo checkouts and an authenticated Pi CLI, so
+# leaving it out is the quickest way to click through the product.
+if [[ "$RUN_WORKER" == "true" ]]; then
+  pnpm exec concurrently \
+    -n server,web,worker \
+    -c blue,green,magenta \
+    "$SERVER_CMD" \
+    "$WEB_CMD" \
+    "$WORKER_CMD"
+else
+  pnpm exec concurrently \
+    -n server,web \
+    -c blue,green \
+    "$SERVER_CMD" \
+    "$WEB_CMD"
+fi

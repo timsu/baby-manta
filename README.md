@@ -85,7 +85,7 @@ MANTA_HEALTH_CHECK_SLACK_CHANNEL=C... # Channel for daily health reports
 ### 5. Start the server
 
 ```bash
-pnpm --filter @manta/server dev
+pnpm server
 # Listening on http://localhost:3020
 ```
 
@@ -134,7 +134,7 @@ On Linux, the user service starts when you log in. To allow boot-before-login, r
 ### 7. Start the web UI
 
 ```bash
-pnpm --filter @manta/web dev
+pnpm web
 # http://localhost:5173
 ```
 

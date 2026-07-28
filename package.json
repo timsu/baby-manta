@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "./scripts/dev.sh",
     "dev:open": "./scripts/dev.sh open",
+    "server": "./scripts/dev.sh --no-worker",
     "build": "pnpm -r build",
     "db:setup": "DATABASE_URL=\"${DATABASE_URL:-file:./dev.db}\" pnpm --filter @manta/db exec prisma migrate deploy",
     "db:reset": "DATABASE_URL=\"${DATABASE_URL:-file:./dev.db}\" pnpm --filter @manta/db exec prisma migrate reset --force",
