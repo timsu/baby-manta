@@ -1,0 +1,19 @@
+start-local-worker
+  s_2b7f30d4671dd6::t_5110d960f7ff50 16-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "79af927d8f9e04b0543798a9251d6eb457a0b2e5",
+  "prompts": {},
+  "sessions": {
+    "s_2b7f30d4671dd6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af947429-bba7-4408-ab98-9ec0bdf6862b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Tim Su <timsu@users.noreply.github.com>"
+    }
+  }
+}
