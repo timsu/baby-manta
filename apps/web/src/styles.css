@@ -41,6 +41,17 @@ body {
 .login { width: 340px; text-align: center; display: grid; gap: 14px; box-shadow: var(--shadow); }
 .login h1 { margin: 0 0 2px; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
 .login p { margin: 0; }
+.login-form { display: grid; gap: 10px; }
+.login-form input { width: 100%; text-align: center; }
+/* "or" divider with a rule running through it, between the two sign-in methods */
+.login-sep {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.login-sep::before, .login-sep::after {
+  content: ""; flex: 1; height: 1px; background: var(--border);
+}
+.login .error { color: var(--danger, #e5484d); }
 
 /* ── form controls ───────────────────────────────────────── */
 input, textarea, select {

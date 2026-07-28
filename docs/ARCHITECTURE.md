@@ -22,7 +22,7 @@
 | Brain runtime | **In-server**, driven by Pi with control-plane tools; stateless-per-turn, history in Postgres/S3. | Brain edits no code → needs no sandbox; owning history sidesteps fragile session-resume. |
 | Worker runtime | **Daytona sandbox per worker**, running the Pi/Claude agent; streams events back over SSE. | the sandbox service pattern: server is the trust boundary, Daytona is source of truth for sandbox state. |
 | Frontend | **React 19 + Vite + TanStack Router + nanostores** SPA over WS/SSE + REST; xterm.js + CodeMirror for heavy widgets. | Converges with the platform (React 19/Vite/TanStack Router); nanostores for state per product owner. |
-| Persistence | **PostgreSQL via Prisma** (converges with the platform). No Redis for v1 (Postgres `LISTEN/NOTIFY` for fan-out). | Server holds the product state Daytona doesn't (workspaces, tasks, chat, kanban). |
+| Persistence | **SQLite via Prisma** as shipped; the schema is written to stay portable to PostgreSQL. No Redis for v1 (in-process bus for fan-out). | Server holds the product state Daytona doesn't (workspaces, tasks, chat, kanban). SQLite keeps a checkout runnable with no database to install. |
 | Tests | **Vitest** (unit/integration) + **Playwright** (e2e); CI gate. | Vite-native; one runner for server + web. |
 | Tenancy | **Workspace = company/team**: users + repos + integration configs. | Matches the install-our-apps SaaS model. |
 | Integrations | **One Manta-owned GitHub App, Linear app, Slack app**; workspaces install them. | Single app to maintain; per-workspace installation tokens/credentials. |

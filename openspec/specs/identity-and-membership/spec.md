@@ -4,15 +4,62 @@ How browser users authenticate, discover their identity, and join workspaces.
 
 ## Purpose
 
-Defines the existing browser-facing identity behavior: Google login, logout, current-user bootstrap,
-preference updates, and invitation preview/acceptance.
+Defines the existing browser-facing identity behavior: sign-in (Google OAuth and passwordless
+email), logout, current-user bootstrap, preference updates, and invitation preview/acceptance.
 
 ## Requirements
+
+### Requirement: The browser can discover which sign-in methods are offered
+
+The system SHALL expose, without authentication, which sign-in methods this deployment offers, so
+the web app renders only methods that will actually work.
+
+#### Scenario: Methods are queried
+
+- **WHEN** an unauthenticated browser asks which sign-in methods are available
+- **THEN** the system reports whether Google OAuth is configured
+- **AND** reports whether passwordless email sign-in is enabled
+
+### Requirement: Users can sign in with an email address alone
+
+The system SHALL support passwordless sign-in in which an email address is sufficient to obtain a
+session, creating the user account on first sign-in. Because this grants a session without proving
+control of the address, it SHALL be disabled by default in production and enabled by default
+outside it, so a fresh checkout is usable with no third-party OAuth client.
+
+#### Scenario: A new address signs in
+
+- **WHEN** a browser submits an email address that has no account
+- **THEN** the system creates a user for that address
+- **AND** creates a session cookie
+
+#### Scenario: A known address signs in
+
+- **WHEN** a browser submits an email address that already has an account
+- **THEN** the system signs in as that existing user rather than creating a second account
+
+#### Scenario: The address is malformed
+
+- **WHEN** a browser submits something that is not a valid email address
+- **THEN** the system rejects the request
+- **AND** creates no session and no account
+
+#### Scenario: Email sign-in is disabled
+
+- **WHEN** a browser attempts passwordless sign-in on a deployment where it is disabled
+- **THEN** the system refuses the request without creating a session
 
 ### Requirement: Users authenticate through Google OAuth
 
 The system SHALL start Google OAuth from the browser API and complete the callback by creating a
-Manta session cookie before redirecting the user back to the web app.
+Manta session cookie before redirecting the user back to the web app. When no OAuth client is
+configured the system SHALL refuse the Google routes rather than fail to start.
+
+#### Scenario: Google is not configured
+
+- **WHEN** a browser starts Google login on a deployment with no OAuth client configured
+- **THEN** the system refuses the request
+- **AND** the rest of the application continues to serve normally
 
 #### Scenario: Login starts
 

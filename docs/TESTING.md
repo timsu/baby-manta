@@ -29,7 +29,7 @@ factory. No module-level mocking that leaks across files.
   dedup keys computed correctly.
 - **Credential push**: atomic (tmp + rename) and never logs secret material.
 
-### 2. Integration (real Postgres, faked externals)
+### 2. Integration (real database, faked externals)
 - **DB / query layer**: against an **ephemeral Postgres** (Testcontainers, or a Neon branch in
   CI) with real Prisma + migrations. Asserts the `workspaceId`-required boundary actually
   isolates tenants (a query without scope can't see another workspace's rows).

@@ -26,6 +26,29 @@ export function upsertByGoogle(p: GoogleProfile): Promise<User> {
   });
 }
 
+/**
+ * Upsert a user by email alone — the passwordless sign-in path. Creates the
+ * account on first sight, otherwise returns the existing one (refreshing the
+ * display name if given). `googleSub` is non-null in the schema, so accounts
+ * born this way carry a synthetic `email:<address>` subject; a later real
+ * Google sign-in with the same address matches on the unique `email` instead
+ * and leaves that placeholder untouched.
+ */
+export function upsertByEmail(p: { email: string; name?: string }): Promise<User> {
+  const email = p.email.trim().toLowerCase();
+  return prisma.user.upsert({
+    where: { email },
+    create: {
+      email,
+      googleSub: `email:${email}`,
+      ...(p.name ? { name: p.name } : {}),
+    },
+    update: {
+      ...(p.name ? { name: p.name } : {}),
+    },
+  });
+}
+
 export function byId(id: string): Promise<User | null> {
   return prisma.user.findUnique({ where: { id } });
 }

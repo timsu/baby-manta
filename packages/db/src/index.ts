@@ -46,11 +46,12 @@ export type {
   TransitionActor,
   WorkerStatus,
   SecretKind,
-  SlackBot,
   SlackBotType,
   SpawnCardPolicy,
-  SlackMessageSchedule,
   SlackMessageScheduleCadence,
   Prisma,
 } from "./client.ts";
+// SlackBot/SlackMessageSchedule come from the slack module, not the generated
+// client: it decodes the JSON-backed list columns into real arrays.
+export type { SlackBot, SlackMessageSchedule } from "./slack.ts";
 export type { PrFields } from "./tasks.ts";

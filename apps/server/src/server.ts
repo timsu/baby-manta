@@ -124,7 +124,8 @@ export function start(port = config.port()): void {
   const app = createApp({ auth, brain, slack: slackDeps, webRoot });
   const injectWebSocket = setupWebSocket(app, { sessions: auth.sessions, brain });
   const server = serve({ fetch: app.fetch, port }, (info) => {
-    logger.info("manta-server listening", { port: info.port, login: "/api/auth/google" });
+    const signIn = [config.googleConfigured() && "google", config.emailLoginEnabled() && "email"].filter(Boolean);
+    logger.info("manta-server listening", { port: info.port, signIn });
   });
   // A port-bind failure at startup is fatal: another server already owns the
   // port. Exit instead of letting the catch-all uncaughtException handler keep a

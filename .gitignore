@@ -18,6 +18,11 @@ playwright-report/
 test-results/
 # Prisma generated client
 packages/db/generated/
+# SQLite database files (local data, never committed)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 .worker.env
 .claude
 .manta-images/

@@ -211,7 +211,7 @@ describe.skipIf(!hasDb)("brain task tools", () => {
     );
     const second = await runWithWorker<{ id: string; reusedExisting?: boolean; workerStarted: boolean; duplicateMatchReason?: string }>(
       "create_task",
-      { description: "Fix the ENG-5994 regression", repo: "acme/app", linearIssueIdentifier: "dst-5994" },
+      { description: "Fix the ENG-5994 regression", repo: "acme/app", linearIssueIdentifier: "eng-5994" },
     );
 
     expect(second.id).toBe(first.id);

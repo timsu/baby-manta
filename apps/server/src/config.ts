@@ -26,7 +26,28 @@ export const config = {
     clientSecret: required("GOOGLE_CLIENT_SECRET"),
     redirectUri: optional("GOOGLE_REDIRECT_URI", "http://localhost:5173/api/auth/google/callback"),
   }),
-  sessionSecret: () => required("SESSION_SECRET"),
+  /** True when Google OAuth is configured. Google sign-in is offered only then,
+   * so the server boots and is usable with no OAuth client at all. */
+  googleConfigured: () => Boolean(process.env["GOOGLE_CLIENT_ID"] && process.env["GOOGLE_CLIENT_SECRET"]),
+  /**
+   * Passwordless email sign-in: type an address, get an account. There is no
+   * password and no verification, so anyone who can reach the server can sign
+   * in as anyone — it exists to make local development and evaluation runs
+   * possible without an OAuth client, and is **off in production** unless
+   * MANTA_EMAIL_LOGIN=true is set deliberately.
+   */
+  emailLoginEnabled: () =>
+    optional("MANTA_EMAIL_LOGIN", process.env["NODE_ENV"] === "production" ? "false" : "true") === "true",
+  /**
+   * Signs session cookies. Required in production; outside it a fixed
+   * development value keeps a fresh checkout runnable with no configuration.
+   * The dev value is public — every checkout shares it — so sessions signed
+   * with it are forgeable and it must never reach a deployed server.
+   */
+  sessionSecret: () =>
+    process.env["NODE_ENV"] === "production"
+      ? required("SESSION_SECRET")
+      : optional("SESSION_SECRET", "manta-development-session-secret-do-not-use-in-production"),
   /**
    * Key for encrypting workspace secrets at rest (provider API keys, Codex
    * OAuth tokens). Any string; a 32-byte AES key is derived from it. Falls back

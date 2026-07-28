@@ -7,7 +7,7 @@ Engineering orchestrator. A **brain** agent on the server chats with you, spawns
 ```
 Browser  ←──WS──→  Server (Hono :3020)  ←──WS──→  Worker daemon(s)
                         │
-                   Postgres · Brain (Pi)
+                   SQLite · Brain (Pi)
 ```
 
 The server and worker(s) run as separate processes. Workers can be on any machine with access to the repos.
@@ -19,8 +19,9 @@ The server and worker(s) run as separate processes. Workers can be on any machin
 ### 1. Prerequisites
 
 - Node 24+, pnpm 10+
-- PostgreSQL running locally (`postgresql://localhost:5432/manta`)
 - [Pi CLI](https://pi.ai/cli) installed and authenticated (workers use it to run agent turns)
+
+No database to install — Manta uses **SQLite**, stored as a file.
 
 ### 2. Install
 
@@ -31,21 +32,25 @@ pnpm install
 ### 3. Database
 
 ```bash
-# Create the database
-createdb manta
-
-# Apply migrations
-pnpm --filter @manta/db migrate:deploy
+# Creates the SQLite file and applies every migration
+pnpm db:setup
 ```
+
+`pnpm db:reset` wipes it and starts over.
 
 ### 4. Environment — server
 
-Create `apps/server/.env`:
+Everything below is optional. With no `apps/server/.env` at all, the server boots,
+creates `packages/db/prisma/dev.db`, and offers passwordless email sign-in — enough
+to click through the whole product locally.
+
+Create `apps/server/.env` to change any of it:
 
 ```env
-DATABASE_URL=postgresql://localhost:5432/manta
+DATABASE_URL=file:./dev.db          # relative to packages/db/prisma/
+SESSION_SECRET=any-random-string
 
-# Google OAuth (required for login)
+# Google OAuth — optional. Omit it and the login page offers email sign-in only.
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_REDIRECT_URI=http://localhost:3020/api/auth/google/callback
@@ -169,11 +174,11 @@ packages/
 
 ### Key env vars (server)
 
-All optional except `DATABASE_URL` and Google OAuth:
+All optional — the server runs with none of them set:
 
 | Var | Purpose |
 |-----|---------|
-| `DATABASE_URL` | Postgres connection string |
+| `DATABASE_URL` | SQLite file URL (default `file:./dev.db`, relative to `packages/db/prisma/`) |
 | `GOOGLE_CLIENT_ID/SECRET` | Google OAuth |
 | `GITHUB_APP_ID/PRIVATE_KEY` | Mint per-workspace repo-scoped installation tokens |
 | `GITHUB_APP_SLUG` | Builds the App install URL |

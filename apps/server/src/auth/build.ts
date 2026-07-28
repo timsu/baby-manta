@@ -9,11 +9,15 @@ import { createSessions } from "./session.ts";
 import type { AuthDeps } from "./routes.ts";
 
 export function buildAuthDeps(now: () => Date = () => new Date()): AuthDeps {
-  const g = config.google();
+  // Google is optional: with no OAuth client configured the server still boots
+  // and serves passwordless email sign-in, so a fresh checkout runs with no
+  // third-party setup at all.
   return {
-    googleAuth: createGoogleAuth(g),
+    googleAuth: config.googleConfigured() ? createGoogleAuth(config.google()) : null,
     sessions: createSessions(config.sessionSecret(), now),
     upsertUser: (p) => users.upsertByGoogle(p),
+    upsertUserByEmail: (p) => users.upsertByEmail(p),
+    emailLoginEnabled: config.emailLoginEnabled(),
     memberships: (userId) => users.membershipsFor(userId),
     now,
     webAppUrl: config.webAppUrl(),

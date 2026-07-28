@@ -10,6 +10,12 @@ import type { AgentEvent, CardStatus } from "@manta/shared";
 // sent from one origin (:5173). No cross-port cookie ambiguity.
 export const authUrl = "/api/auth/google";
 
+/** Sign-in methods this deployment offers; drives what the login card renders. */
+export interface AuthMethods {
+  google: boolean;
+  email: boolean;
+}
+
 export interface Me {
   id: string;
   email: string;
@@ -573,6 +579,14 @@ export const api = {
     }
   },
   logout: () => req<{ ok: true }>("/api/auth", { method: "DELETE" }),
+  /** Which sign-in methods this server offers (unauthenticated). */
+  authMethods: () => req<AuthMethods>("/api/auth/methods"),
+  /** Passwordless sign-in; creates the account on first use. */
+  loginWithEmail: (email: string) =>
+    req<{ ok: true; email: string }>("/api/auth/email", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
   updateMePreferences: (prefs: { localWorkerOnboardingDismissed?: boolean }) =>
     req<{ localWorkerOnboardingDismissed: boolean }>("/api/me/preferences", {
       method: "PATCH",

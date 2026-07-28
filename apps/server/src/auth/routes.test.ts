@@ -70,6 +70,84 @@ describe("GET /api/auth/google/callback", () => {
   });
 });
 
+describe("POST /api/auth/email", () => {
+  const emailApp = (overrides: Partial<AuthDeps> = {}) =>
+    createApp({
+      logger: silent,
+      auth: fakeAuth({
+        emailLoginEnabled: true,
+        upsertUserByEmail: async ({ email }) => ({ id: "u-email", email }),
+        ...overrides,
+      }),
+    });
+
+  const post = (app: ReturnType<typeof emailApp>, body: unknown) =>
+    app.request("/api/auth/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("signs in by email alone and sets a session cookie", async () => {
+    const res = await post(emailApp(), { email: "new@example.com" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie") ?? "").toContain("manta_session=tok-u-email");
+  });
+
+  it("normalizes the address before creating the account", async () => {
+    const seen: string[] = [];
+    const res = await post(
+      emailApp({ upsertUserByEmail: async ({ email }) => { seen.push(email); return { id: "u1", email }; } }),
+      { email: "  Mixed.Case@Example.COM  " },
+    );
+    expect(res.status).toBe(200);
+    expect(seen).toEqual(["mixed.case@example.com"]);
+  });
+
+  it("rejects a malformed address", async () => {
+    for (const email of ["", "nope", "no@domain", "a b@example.com"]) {
+      const res = await post(emailApp(), { email });
+      expect(res.status, email).toBe(400);
+    }
+  });
+
+  it("404s when email login is disabled (the production default)", async () => {
+    const res = await post(emailApp({ emailLoginEnabled: false }), { email: "new@example.com" });
+    expect(res.status).toBe(404);
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+});
+
+describe("GET /api/auth/methods", () => {
+  it("reports both methods when both are configured", async () => {
+    const app = createApp({
+      logger: silent,
+      auth: fakeAuth({ emailLoginEnabled: true, upsertUserByEmail: async ({ email }) => ({ id: "u1", email }) }),
+    });
+    expect(await (await app.request("/api/auth/methods")).json()).toEqual({ google: true, email: true });
+  });
+
+  it("reports google off when no OAuth client is configured", async () => {
+    const app = createApp({ logger: silent, auth: fakeAuth({ googleAuth: null }) });
+    expect(await (await app.request("/api/auth/methods")).json()).toEqual({ google: false, email: false });
+  });
+});
+
+describe("Google routes when no OAuth client is configured", () => {
+  const app = () => createApp({ logger: silent, auth: fakeAuth({ googleAuth: null }) });
+
+  it("404s the redirect instead of crashing", async () => {
+    expect((await app().request("/api/auth/google")).status).toBe(404);
+  });
+
+  it("404s the callback instead of crashing", async () => {
+    const res = await app().request("/api/auth/google/callback?code=good&state=s1", {
+      headers: { Cookie: "manta_oauth_state=s1" },
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("GET /api/me", () => {
   it("401s without a session", async () => {
     const res = await app().request("/api/me");

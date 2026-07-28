@@ -258,13 +258,18 @@ export async function sendDueScheduledSlackMessages(deps?: ScheduledSlackDeps): 
   if (!due.length) return;
 
   for (const schedule of due) {
+    // Read straight off the Prisma row here, so decode the JSON-backed list
+    // column the same way the db layer's helpers do.
+    const daysOfWeek = Array.isArray(schedule.daysOfWeek)
+      ? schedule.daysOfWeek.filter((day): day is number => typeof day === "number")
+      : [];
     let nextRunAt: Date;
     try {
       nextRunAt = nextScheduleRunAt({
         cadence: schedule.cadence,
         timeOfDayUtc: schedule.timeOfDayUtc,
         dayOfWeekUtc: schedule.dayOfWeekUtc,
-        daysOfWeek: schedule.daysOfWeek,
+        daysOfWeek,
         timeZone: schedule.timeZone,
         includeWeekendsAndHolidays: schedule.includeWeekendsAndHolidays,
         after: now,
@@ -279,7 +284,7 @@ export async function sendDueScheduledSlackMessages(deps?: ScheduledSlackDeps): 
           cadence: schedule.cadence,
           timeOfDayUtc: schedule.timeOfDayUtc,
           dayOfWeekUtc: schedule.dayOfWeekUtc,
-          daysOfWeek: { equals: schedule.daysOfWeek },
+          daysOfWeek: { equals: schedule.daysOfWeek ?? undefined },
           timeZone: schedule.timeZone,
           includeWeekendsAndHolidays: schedule.includeWeekendsAndHolidays,
         },

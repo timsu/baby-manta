@@ -8,8 +8,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "generate": "prisma generate",
-    "migrate": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy",
+    "migrate": "DATABASE_URL=\"${DATABASE_URL:-file:./dev.db}\" prisma migrate dev",
+    "migrate:deploy": "DATABASE_URL=\"${DATABASE_URL:-file:./dev.db}\" prisma migrate deploy",
     "test": "vitest run"
   },
   "dependencies": {

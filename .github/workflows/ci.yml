@@ -8,22 +8,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: manta
-          POSTGRES_PASSWORD: manta
-          POSTGRES_DB: manta
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # SQLite — no database service to spin up. The same DATABASE_URL that CI
+    # uses is what a developer runs locally, so integration tests are never
+    # silently skipped.
     env:
-      DATABASE_URL: postgresql://manta:manta@localhost:5432/manta?schema=public
+      DATABASE_URL: file:./ci.db
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

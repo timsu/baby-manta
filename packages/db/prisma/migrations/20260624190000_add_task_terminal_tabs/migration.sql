@@ -1,1 +1,0 @@
-ALTER TABLE "tasks" ADD COLUMN "terminalTabs" JSONB NOT NULL DEFAULT '[]';

@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -20,8 +20,8 @@ model Workspace {
   slug        String          @unique
   name        String
   settings    Json            @default("{}")
-  brainPrompt String          @default("") @db.Text
-  teamMemory  String          @default("") @db.Text
+  brainPrompt String          @default("")
+  teamMemory  String          @default("")
   status      WorkspaceStatus @default(active)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
@@ -131,7 +131,7 @@ model Membership {
   userId         String
   workspaceId    String
   role           Role     @default(member)
-  personalMemory String   @default("") @db.Text
+  personalMemory String   @default("")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -249,7 +249,7 @@ model Task {
 
   name        String
   title       String
-  description String   @db.Text
+  description String
   kind        TaskKind
   cardType    CardType
   cardStatus  CardStatus  @default(bot_working)
@@ -291,7 +291,7 @@ model Task {
 
   // Markdown plan produced by plan-mode cards. Shown in the card detail pane
   // after the worker calls plan_ready and hands the card back to a human.
-  planDocument String? @db.Text
+  planDocument String?
 
   prNumber    Int?
   prUrl       String?
@@ -392,8 +392,8 @@ model SpotCheckRun {
   spotCheckName String
   taskId        String?
   verdict       SpotCheckVerdict @default(unknown)
-  summary       String @db.Text
-  report        String @db.Text
+  summary       String
+  report        String
   startedAt     DateTime
   completedAt   DateTime?
   createdAt     DateTime @default(now())
@@ -504,7 +504,7 @@ model Message {
   channel     String
   seq         Int
   role        MessageRole
-  content     String      @db.Text
+  content     String
   meta        Json?
   images      Json?
   ts          DateTime    @default(now())
@@ -551,7 +551,7 @@ model InboxItem {
   id          String      @id @default(cuid())
   workspaceId String
   channel     String
-  body        String      @db.Text
+  body        String
   source      InboxSource
   consumedAt  DateTime?
   createdAt   DateTime    @default(now())
@@ -577,8 +577,8 @@ model PermSession {
   slug         String
   label        String
   dir          String?
-  systemPrompt String? @db.Text
-  initMessage  String? @db.Text
+  systemPrompt String?
+  initMessage  String?
   backend      String
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -616,8 +616,8 @@ model Repo {
   defaultBranch      String    @default("main")
   kindHint           TaskKind?
   enabled            Boolean   @default(true)
-  setupCommands      String    @default("") @db.Text
-  globalInstructions String    @default("") @db.Text
+  setupCommands      String    @default("")
+  globalInstructions String    @default("")
   skillRepos         Json      @default("[]")
 
   workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -631,7 +631,7 @@ model RepoPersonal {
   id           String @id @default(cuid())
   userId       String
   repoId       String
-  instructions String @default("") @db.Text
+  instructions String @default("")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   repo Repo @relation(fields: [repoId], references: [id], onDelete: Cascade)
@@ -678,8 +678,8 @@ model SpotcheckRun {
   workspaceId    String
   checkName      String
   status         String
-  report         String    @default("") @db.Text
-  logs           String    @default("") @db.Text
+  report         String    @default("")
+  logs           String    @default("")
   acknowledgedAt DateTime?
   createdAt      DateTime  @default(now())
 
@@ -727,7 +727,7 @@ model DmLog {
   fromWorkspaceId String
   toWorkspaceId   String?
   toExternal      String?
-  body            String   @db.Text
+  body            String
   isReply         Boolean  @default(false)
   sentAt          DateTime @default(now())
 
@@ -747,9 +747,9 @@ model SlackBot {
   slackAppId          String          @unique // api_app_id — routes inbound events to this bot
   teamId              String? // Slack team id (captured from auth.test)
   botUserId           String? // bot's own Slack user id (ignore self / detect mention)
-  instructions        String          @db.Text // operating instructions = this bot's system prompt
+  instructions        String // operating instructions = this bot's system prompt
   botType             SlackBotType    @default(slack)
-  autoRespondChannels String[]        @default([]) // channel IDs it auto-responds in (empty = mention/DM only)
+  autoRespondChannels Json            @default("[]") // channel IDs it auto-responds in (empty = mention/DM only)
   autoRespondChannelInstructions Json      @default("{}") // channel ID → extra instructions for auto-respond turns in that channel
   spawnCardPolicy     SpawnCardPolicy @default(auto) // auto = brain decides; never = always answer-only
   defaultRepo         String? // org/repo to assume when Slack requests omit a repo
@@ -775,17 +775,17 @@ model SlackMessageSchedule {
   name           String
   channelId      String
   repo           String?
-  prompt         String                    @db.Text
+  prompt         String
   cadence        SlackMessageScheduleCadence
   timeOfDayUtc   String // HH:mm local wall-clock time in timeZone (legacy field name)
   dayOfWeekUtc   Int? // deprecated compatibility field; synchronized with daysOfWeek during rollout
-  daysOfWeek     Int[]                     @default([]) // 0 = Sunday in timeZone
+  daysOfWeek     Json                      @default("[]") // 0 = Sunday in timeZone
   timeZone       String                    @default("UTC")
   includeWeekendsAndHolidays Boolean       @default(false)
   enabled        Boolean                   @default(true)
   nextRunAt      DateTime
   lastRunAt      DateTime?
-  lastError      String?                   @db.Text
+  lastError      String?
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
 
@@ -806,7 +806,7 @@ model CardImage {
   id          String   @id @default(cuid())
   workspaceId String
   mimeType    String
-  data        String   @db.Text
+  data        String
   sha256      String?
   createdAt   DateTime @default(now())
 

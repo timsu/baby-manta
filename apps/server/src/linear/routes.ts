@@ -843,7 +843,12 @@ export function createLinearRoutes(deps: LinearRoutesDeps): Hono<{ Variables: Au
     if (!Array.from(candidateRepo.values()).some(Boolean)) return c.json({ error: "no_repo_configured" }, 400);
     const workerBackend = await firstAvailableCardBackendForUser(ws);
     const createdTasks = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM workspaces WHERE id = ${ws} FOR UPDATE`;
+      // Serialize concurrent batch runs against this workspace: the automation
+      // history below is a read-modify-write, so two runs racing would create
+      // duplicate cards for the same Linear issues. SQLite has no `SELECT … FOR
+      // UPDATE`; an immediate write takes the transaction's write lock and gives
+      // the same serialization.
+      await tx.workspace.update({ where: { id: ws }, data: { updatedAt: new Date() } });
       const row = await tx.workspace.findUnique({ where: { id: ws }, select: { settings: true } });
       const lockedSettings = ((row?.settings as LinearWorkspaceSettings | null) ?? {}) as LinearWorkspaceSettings;
       const history = lockedSettings.linearStatusAutomationHistory ?? {};

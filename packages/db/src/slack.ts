@@ -1,7 +1,41 @@
 import { prisma } from "./client.ts";
-import type { SlackBot, SlackBotType, SpawnCardPolicy, SlackMessageSchedule, SlackMessageScheduleCadence } from "../generated/client/index.js";
+import type {
+  SlackBot as SlackBotRow,
+  SlackBotType,
+  SpawnCardPolicy,
+  SlackMessageSchedule as SlackMessageScheduleRow,
+  SlackMessageScheduleCadence,
+} from "../generated/client/index.js";
 
-export type { SlackBot, SlackBotType, SpawnCardPolicy, SlackMessageSchedule, SlackMessageScheduleCadence };
+export type { SlackBotType, SpawnCardPolicy, SlackMessageScheduleCadence };
+
+// SQLite has no array columns, so these two list fields are stored as JSON and
+// re-hydrated here. Callers see plain arrays and never touch the JSON encoding.
+
+/** A Slack bot row, with `autoRespondChannels` decoded back into an array. */
+export type SlackBot = Omit<SlackBotRow, "autoRespondChannels"> & { autoRespondChannels: string[] };
+/** A schedule row, with `daysOfWeek` decoded back into an array. */
+export type SlackMessageSchedule = Omit<SlackMessageScheduleRow, "daysOfWeek"> & { daysOfWeek: number[] };
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function numberList(value: unknown): number[] {
+  return Array.isArray(value) ? value.filter((v): v is number => typeof v === "number") : [];
+}
+
+function mapBot(row: SlackBotRow): SlackBot;
+function mapBot(row: SlackBotRow | null): SlackBot | null;
+function mapBot(row: SlackBotRow | null): SlackBot | null {
+  return row && { ...row, autoRespondChannels: stringList(row.autoRespondChannels) };
+}
+
+function mapSchedule(row: SlackMessageScheduleRow): SlackMessageSchedule;
+function mapSchedule(row: SlackMessageScheduleRow | null): SlackMessageSchedule | null;
+function mapSchedule(row: SlackMessageScheduleRow | null): SlackMessageSchedule | null {
+  return row && { ...row, daysOfWeek: numberList(row.daysOfWeek) };
+}
 
 // ── Workspace ↔ Slack team ──────────────────────────────────────────────────
 // One Slack team maps to one Manta workspace; recorded as a WorkspaceIdentity so
@@ -52,17 +86,17 @@ export interface CreateBotInput {
   enabled?: boolean;
 }
 
-export function createBot(workspaceId: string, input: CreateBotInput): Promise<SlackBot> {
+export async function createBot(workspaceId: string, input: CreateBotInput): Promise<SlackBot> {
   // Buffer.from normalizes to Uint8Array<ArrayBuffer>, which Prisma's Bytes type
   // requires (a bare Uint8Array is Uint8Array<ArrayBufferLike>).
-  return prisma.slackBot.create({
+  return mapBot(await prisma.slackBot.create({
     data: {
       workspaceId,
       ...input,
       botTokenCipher: Buffer.from(input.botTokenCipher),
       signingSecretCipher: Buffer.from(input.signingSecretCipher),
     },
-  });
+  }));
 }
 
 export interface UpdateBotInput {
@@ -99,27 +133,28 @@ export async function updateBot(
   });
   if (res.count === 0) return null;
   // Scope the read-back too: never expose a workspace-owned row by id alone.
-  return prisma.slackBot.findFirst({ where: { id: botId, workspaceId } });
+  return mapBot(await prisma.slackBot.findFirst({ where: { id: botId, workspaceId } }));
 }
 
 export async function deleteBot(workspaceId: string, botId: string): Promise<void> {
   await prisma.slackBot.deleteMany({ where: { id: botId, workspaceId } });
 }
 
-export function listBots(workspaceId: string): Promise<SlackBot[]> {
-  return prisma.slackBot.findMany({ where: { workspaceId }, orderBy: { createdAt: "asc" } });
+export async function listBots(workspaceId: string): Promise<SlackBot[]> {
+  const rows = await prisma.slackBot.findMany({ where: { workspaceId }, orderBy: { createdAt: "asc" } });
+  return rows.map((row) => mapBot(row));
 }
 
-export function getBot(workspaceId: string, botId: string): Promise<SlackBot | null> {
-  return prisma.slackBot.findFirst({ where: { id: botId, workspaceId } });
+export async function getBot(workspaceId: string, botId: string): Promise<SlackBot | null> {
+  return mapBot(await prisma.slackBot.findFirst({ where: { id: botId, workspaceId } }));
 }
 
 /** Resolve an inbound Slack event to its bot by Slack's api_app_id. This is the
  * inbound-routing exception to the workspace-scoping rule (analogous to
  * findWorkspaceBySlackTeam): the request isn't authenticated to a workspace yet,
  * and the signing-secret check happens after this lookup. */
-export function findBotByAppId(slackAppId: string): Promise<SlackBot | null> {
-  return prisma.slackBot.findUnique({ where: { slackAppId } });
+export async function findBotByAppId(slackAppId: string): Promise<SlackBot | null> {
+  return mapBot(await prisma.slackBot.findUnique({ where: { slackAppId } }));
 }
 
 // ── Scheduled Slack messages ────────────────────────────────────────────────
@@ -143,23 +178,24 @@ export type UpdateMessageScheduleInput = Partial<
   Pick<SlackMessageSchedule, "name" | "channelId" | "repo" | "prompt" | "cadence" | "timeOfDayUtc" | "daysOfWeek" | "timeZone" | "includeWeekendsAndHolidays" | "enabled" | "nextRunAt" | "lastRunAt" | "lastError">
 >;
 
-export function listMessageSchedules(workspaceId: string): Promise<SlackMessageSchedule[]> {
-  return prisma.slackMessageSchedule.findMany({
+export async function listMessageSchedules(workspaceId: string): Promise<SlackMessageSchedule[]> {
+  const rows = await prisma.slackMessageSchedule.findMany({
     where: { workspaceId },
     orderBy: [{ enabled: "desc" }, { nextRunAt: "asc" }, { createdAt: "asc" }],
   });
+  return rows.map((row) => mapSchedule(row));
 }
 
-export function getMessageSchedule(workspaceId: string, scheduleId: string): Promise<SlackMessageSchedule | null> {
-  return prisma.slackMessageSchedule.findFirst({ where: { id: scheduleId, workspaceId } });
+export async function getMessageSchedule(workspaceId: string, scheduleId: string): Promise<SlackMessageSchedule | null> {
+  return mapSchedule(await prisma.slackMessageSchedule.findFirst({ where: { id: scheduleId, workspaceId } }));
 }
 
-export function createMessageSchedule(workspaceId: string, input: CreateMessageScheduleInput): Promise<SlackMessageSchedule> {
-  return prisma.$transaction(async (tx) => {
+export async function createMessageSchedule(workspaceId: string, input: CreateMessageScheduleInput): Promise<SlackMessageSchedule> {
+  return mapSchedule(await prisma.$transaction(async (tx) => {
     const bot = await tx.slackBot.findFirst({ where: { id: input.slackBotId, workspaceId }, select: { id: true } });
     if (!bot) throw new Error("slack_bot_not_found");
     return tx.slackMessageSchedule.create({ data: { workspaceId, ...input } });
-  });
+  }));
 }
 
 export async function updateMessageSchedule(
