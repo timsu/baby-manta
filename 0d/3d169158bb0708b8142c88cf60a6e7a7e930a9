@@ -1,0 +1,23 @@
+scripts/dev.sh
+  s_2b7f30d4671dd6::t_06db02a0db183c 14,21-23,106-122
+README.md
+  s_2b7f30d4671dd6::t_1e0c23c8085115 88,137
+package.json
+  s_2b7f30d4671dd6::t_8e5458ed3f7df9 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0d3d169158bb0708b8142c88cf60a6e7a7e930a9",
+  "prompts": {},
+  "sessions": {
+    "s_2b7f30d4671dd6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af947429-bba7-4408-ab98-9ec0bdf6862b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Tim Su <timsu@users.noreply.github.com>"
+    }
+  }
+}
